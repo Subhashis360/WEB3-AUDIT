@@ -9,9 +9,11 @@ Generate a `threat-scope/` folder at the project root containing all output file
 
 `$SKILL_DIR` = the directory containing this SKILL.md file. Resolve it from the path you loaded this skill from (e.g. if this file is at `/path/to/x-ray/SKILL.md`, then `$SKILL_DIR` = `/path/to/x-ray`).
 
-## Progress tracking (MANDATORY)
+**Runtime compatibility:** this skill runs on any agentic runtime (Claude Code, OpenCode, Codex, Gemini CLI, Cursor, Antigravity, …). Tool names below use Claude Code's as the canonical example — substitute your runtime's equivalents: `Bash`→shell, `Read`/`Grep`/`Glob`→file tools, `Agent`→your subagent/task tool. `TodoWrite` is a progress convenience: use it if your runtime has it, otherwise track phases internally and skip the TodoWrite calls. Where a step launches subagents (Path B), use your runtime's subagent tool; if it has none, the orchestrator performs those reads/extractions itself inline (sequentially) — same output, only slower. Only a shell + file read are hard requirements.
 
-Before doing anything else, call TodoWrite with these 3 todos (all `pending`):
+## Progress tracking (MANDATORY where `TodoWrite` exists)
+
+If your runtime provides `TodoWrite` (Claude Code), before doing anything else call it with these 3 todos (all `pending`). If it does not, track the same three phases internally and skip every TodoWrite call — the phase boundaries below still apply:
 
 1. `Phase 1: Enumerate & measure codebase`
 2. `Phase 2: Read sources, classify entry points, synthesize invariants`
@@ -40,8 +42,8 @@ mkdir -p [project-root]/threat-scope && bash $SKILL_DIR/scripts/enumerate.sh [pr
 
 **0. Version check** (foreground):
 - Read the local `VERSION` file from `$SKILL_DIR/VERSION`
-- Bash `curl -sf https://raw.githubusercontent.com/Subhashis360/LLM-SKILLS/main/x-ray/VERSION`
-- If the remote VERSION fetch succeeds and differs from local, print `⚠️ You are not using the latest version. Please upgrade for best security coverage. See https://github.com/Subhashis360/LLM-SKILLS`. If it fails, skip silently.
+- Bash `curl -sf https://raw.githubusercontent.com/Subhashis360/WEB3-AUDIT/main/x-ray/VERSION`
+- If the remote VERSION fetch succeeds and differs from local, print `⚠️ You are not using the latest version. Please upgrade for best security coverage. See https://github.com/Subhashis360/WEB3-AUDIT`. If it fails, skip silently.
 
 **1. Coverage** (`run_in_background: true`):
 

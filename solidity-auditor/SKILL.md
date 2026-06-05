@@ -7,6 +7,31 @@ description: Deep-dive security audit of Solidity / web3 code while you develop.
 
 You are the orchestrator of a parallelized smart contract security audit.
 
+## Runtime Compatibility (read first)
+
+This skill runs on **any agentic runtime** — Claude Code, OpenCode, Codex, Gemini CLI, Cursor, Antigravity, and others. It is written against an abstract capability set. Map each capability to your host runtime's equivalent tool; the steps below use **Claude Code tool names as the canonical example**.
+
+| Capability | Claude Code | OpenCode | Codex / Gemini / Cursor / other |
+| --- | --- | --- | --- |
+| Run shell | `Bash` | `bash` | the runtime's shell/exec tool |
+| Read file | `Read` | `read` | the runtime's file-read tool |
+| Search / list | `Grep` / `Glob` | `grep` / `glob` | the runtime's search tools, or `grep`/`find` via shell |
+| Spawn sub-agent | `Agent` (Task) | `task` subagent | the runtime's subagent/task tool, if any |
+| Ask the user | `AskUserQuestion` | (prompt) | skip if unavailable |
+| Load deferred tool | `ToolSearch` | — | skip — Claude-Code-only convenience |
+| Track todos | `TodoWrite` | — | optional — skip if absent |
+
+`ToolSearch`, `AskUserQuestion`, and `TodoWrite` are **conveniences, not load-bearing** — if your runtime lacks them, skip those steps. Shell + file-read are the only hard requirements.
+
+**Determine `{spawn_mode}`** from how your runtime can run the N specialty agents, and use it everywhere a step says "spawn agent N":
+
+- **`parallel-background`** — runtime spawns sub-agents that run concurrently in the background (Claude Code `Agent` + `run_in_background`). Spawn all at once, collect on completion. *(Canonical path used by the steps below.)*
+- **`parallel-foreground`** — sub-agent tool exists but blocks: spawn in parallel batches, wait inline for each batch.
+- **`sequential`** — sub-agent tool runs one at a time: run each agent in turn, collect findings, continue.
+- **`inline`** — **NO sub-agent tool at all** (universal fallback): the orchestrator itself plays every agent. For each agent bundle, do a dedicated, focused reasoning pass over *that bundle only* (source + SOP + that one specialty + shared rules), emit its FINDING/LEAD blocks, then move to the next specialty. Slower, **identical methodology**, runs anywhere with a shell + file read.
+
+The **method is identical** across runtimes — each specialty reads its bundle and produces findings; the orchestrator dedups, gates, and reports. Only the dispatch mechanism changes. **Never skip a specialty because background spawning is unavailable — fall back to a lower `{spawn_mode}` (down to `inline`).** A run that executes all specialties sequentially is correct; a run that drops specialties is not.
+
 ## Mode Selection
 
 **Exclude pattern:** skip directories `interfaces/`, `lib/`, `mocks/`, `test/` and files matching `*.t.sol`, `*Test*.sol` or `*Mock*.sol`.
@@ -36,12 +61,12 @@ You are the orchestrator of a parallelized smart contract security audit.
 
 a. Bash `find` for in-scope `.sol` files per mode selection — and, in the same call, for ZK circuit files (`*.circom`, `*.nr`, `*.cairo`, and halo2/arkworks/gnark gadget `.rs`) to set `{zk_present}` / `{zk_files}` per Mode Selection
 b. Glob for `**/references/hacking-agents/shared-rules.md` — extract the `references/` directory (two levels up) as `{resolved_path}`
-c. ToolSearch `select:Agent`
+c. (Claude Code only) ToolSearch `select:Agent` to load the sub-agent tool. On runtimes without `ToolSearch`, skip this — use whatever sub-agent/task tool your runtime exposes per `{spawn_mode}`, or `inline` if it has none.
 d. Read the local `VERSION` file from the same directory as this skill
-e. Bash `curl -sf https://raw.githubusercontent.com/Subhashis360/LLM-SKILLS/main/solidity-auditor/VERSION`
+e. Bash `curl -sf https://raw.githubusercontent.com/Subhashis360/WEB3-AUDIT/main/solidity-auditor/VERSION`
 f. Bash `mktemp -d ./.audit-XXXXXX` → store as `{bundle_dir}`
 
-If the remote VERSION fetch succeeds and differs from local, print `⚠️ You are not using the latest version. Please upgrade for best security coverage. See https://github.com/Subhashis360/LLM-SKILLS`. If it fails, skip silently.
+If the remote VERSION fetch succeeds and differs from local, print `⚠️ You are not using the latest version. Please upgrade for best security coverage. See https://github.com/Subhashis360/WEB3-AUDIT`. If it fails, skip silently.
 
 **Turn 1b — Model selection (Claude Code only).** This turn applies ONLY when both `AskUserQuestion` and the `Agent` tool (with a `model` parameter) are available in your runtime — i.e., Claude Code. On Codex, Gemini, Cursor's native agent, or any runtime without these, SKIP this turn entirely, leave `{agent_model}` unset, and proceed to Turn 2. Do NOT emit the question as prose. Do NOT substitute any other mechanism.
 
@@ -117,7 +142,7 @@ Each bundle = source.md + SOP + specialty + shared-rules. Agents read the bundle
 
 Print line counts for every bundle and `source.md`. Do NOT inline source code into the Agent call prompt itself.
 
-**Turn 3a — Spawn all agents (22, or 23 if `{zk_present}`).** In one message, spawn all agents as **parallel BACKGROUND Agent calls** (`run_in_background=true`). If Turn 1b set `{agent_model}`, pass `model={agent_model}` on every Agent call. If `{agent_model}` is unset (Turn 1b skipped — Codex, Gemini, others), omit the `model` parameter entirely — do NOT substitute any default. The orchestrator will receive a notification when each agent completes — do NOT poll or sleep. Single phase, no later spawns. Proceed to Turn 3b only after every spawned agent (all 22, or 23 with ZK) has notified completion.
+**Turn 3a — Spawn all agents (22, or 23 if `{zk_present}`).** Dispatch per `{spawn_mode}` (see Runtime Compatibility): `parallel-background` spawns them all at once in the background; `parallel-foreground` spawns in batches and waits; `sequential` runs one at a time; `inline` means the orchestrator performs each specialty's reasoning pass itself, one bundle at a time. **All `{spawn_mode}` values must execute every agent — only the dispatch differs.** The canonical instructions below describe the `parallel-background` path (Claude Code); on other runtimes, apply the same per-agent prompt and bundle through your runtime's mechanism. In one message (when parallel), spawn all agents as **parallel BACKGROUND Agent calls** (`run_in_background=true`). If Turn 1b set `{agent_model}`, pass `model={agent_model}` on every Agent call. If `{agent_model}` is unset (Turn 1b skipped — Codex, Gemini, others), omit the `model` parameter entirely — do NOT substitute any default. The orchestrator will receive a notification when each agent completes — do NOT poll or sleep. Single phase, no later spawns. Proceed to Turn 3b only after every spawned agent (all 22, or 23 with ZK) has notified completion.
 
 Agents 1–9 use the **single-specialty prompt** (Turn 3a-i). Agents 10–12 use the **gap-hunter prompt** (Turn 3a-ii). Agents 13–21 use the **critical-exploit prompt** (Turn 3a-iii). Agent 22 (gold-bug-hunter) uses the **single-specialty prompt** (Turn 3a-i). **If `{zk_present}`, additionally spawn agent-23 (circuit-soundness) using the critical-exploit prompt (Turn 3a-iii) — total 23 agents; otherwise 22.**
 
@@ -212,7 +237,7 @@ Without a numbered call sequence and concrete values, it is a LEAD, not a FINDIN
 Output format: see shared-rules.md inside your bundle, plus your specialty's output fields.
 ```
 
-**Turn 3b — Wait for all spawned agents to complete.** Once every spawned agent (all 22, or 23 if `{zk_present}`) has notified completion, proceed to Turn 4. Do NOT proceed to dedup until every agent has finished — let them run to natural completion. Do NOT poll or sleep; act only on completion notifications.
+**Turn 3b — Collect all agent results.** Once every spawned agent (all 22, or 23 if `{zk_present}`) has returned, proceed to Turn 4. Do NOT proceed to dedup until every agent has finished. On `parallel-background` (Claude Code), let them run to natural completion and act only on completion notifications — do NOT poll or sleep. On `parallel-foreground` / `sequential` / `inline`, "completion" simply means each agent's pass has returned its FINDING/LEAD output — gather all of them, then continue. Either way: every specialty's output must be in hand before Turn 4.
 
 **Turn 4 — Deduplicate, validate & output.** Single-pass: deduplicate all agent results, gate-evaluate, and produce the final report in one turn. Do NOT print an intermediate dedup list — go straight to the report.
 

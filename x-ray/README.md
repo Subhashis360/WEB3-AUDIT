@@ -32,7 +32,7 @@ Three fully autonomous phases:
 ## Usage
 
 ```
-Install https://github.com/Subhashis360/LLM-SKILLS and run audit-prep on the codebase
+Install https://github.com/Subhashis360/WEB3-AUDIT and run audit-prep on the codebase
 ```
 
 ## Tips

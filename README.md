@@ -28,17 +28,42 @@ Generates a complete pre-audit intelligence package: threat model, invariant map
 
 ---
 
-## Installation
+## Compatibility — runs on any agentic runtime
 
-Add the skills to your AI agent environment (Antigravity, Claude Code, etc.) and trigger them with natural language commands listed above.
+Both skills are written against an **abstract capability set** (shell + file read/search + an optional sub-agent tool), so they run unmodified across agentic CLIs. On startup the auditor detects what your runtime offers and picks a `spawn_mode` — using parallel background sub-agents where available and gracefully degrading to a sequential **inline** mode (the orchestrator plays every specialist itself) where they aren't. **The methodology is identical everywhere; only the dispatch changes — no specialist is ever skipped.**
+
+| Runtime | Sub-agent dispatch | Status |
+| --- | --- | --- |
+| **Claude Code** | parallel background agents | ✅ first-class (model picker, background fan-out) |
+| **OpenCode** | `task` sub-agents (parallel/sequential) | ✅ supported |
+| **Codex CLI** | sequential / inline | ✅ supported |
+| **Gemini CLI** | sequential / inline | ✅ supported |
+| **Cursor** (agent) | sub-agent or inline | ✅ supported |
+| **Antigravity** | sub-agent or inline | ✅ supported |
+| Any other (shell + file read) | inline fallback | ✅ supported |
+
+Claude-Code-only conveniences (`ToolSearch`, `AskUserQuestion` model picker, `TodoWrite`) are auto-skipped on runtimes that lack them — they are not load-bearing.
+
+The auditor also **self-provisions its toolchain** on first run (Foundry, Slither, solc-select, jq) for Windows / Linux / macOS / WSL — see [`solidity-auditor/scripts/`](./solidity-auditor/scripts/). Terminal-based, global, idempotent.
+
+## Installation & usage
+
+Point your agent at this repo and trigger with natural language:
 
 ```
-Install https://github.com/Subhashis360/LLM-SKILLS and run web3-audit on the codebase
+Install https://github.com/Subhashis360/WEB3-AUDIT and run web3-audit on the codebase
 ```
 
 ```
-Install https://github.com/Subhashis360/LLM-SKILLS and run audit-prep on the codebase
+Install https://github.com/Subhashis360/WEB3-AUDIT and run audit-prep on the codebase
 ```
+
+**Per-runtime invocation:**
+
+- **Claude Code** — `/web3-audit` (or say "web3-audit this repo" / "audit this contract").
+- **OpenCode** — place the skill folder under your skills/commands dir and invoke `web3-audit` / `audit-prep`, or paste the trigger phrase.
+- **Codex / Gemini / Cursor / Antigravity** — load `solidity-auditor/SKILL.md` (or `x-ray/SKILL.md`) as the task instructions and say "run web3-audit on the codebase". The skill adapts to the runtime's available tools automatically.
+- **Any agent** — feed it the SKILL.md and a target path; as long as it has a shell and can read files, it runs in `inline` mode.
 
 ---
 

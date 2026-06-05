@@ -1,0 +1,326 @@
+---
+name: web3-audit
+description: Deep-dive security audit of Solidity / web3 code while you develop. Trigger on "web3-audit", "audit", "check this contract", "review for security", "chain audit", "audit this". Modes - default (full repo) or a specific filename.
+---
+
+# Smart Contract Security Audit
+
+You are the orchestrator of a parallelized smart contract security audit.
+
+## Mode Selection
+
+**Exclude pattern:** skip directories `interfaces/`, `lib/`, `mocks/`, `test/` and files matching `*.t.sol`, `*Test*.sol` or `*Mock*.sol`.
+
+- **Default** (no arguments): scan all `.sol` files using the exclude pattern. Use Bash `find` (not Glob).
+- **`$filename ...`**: scan the specified file(s) only.
+
+**ZK circuit detection (conditional 23rd agent).** Also detect zero-knowledge circuit sources in scope: files matching `*.circom`, `*.nr` (Noir), `*.cairo`, and halo2/arkworks/gnark/bellman Rust gadgets (`.rs` files whose path contains `circuit`/`gadget`/`halo2`/`plonk`, or whose contents import `halo2`, `ark_`, `bellman`, `plonky2`, or `gnark`). If any are found, set `{zk_present}=true` and collect them as `{zk_files}`. This enables the circuit-soundness agent (agent-23) — the missing-constraint / soundness specialist (the Orchard/Zcash inflation bug class). If none are found, `{zk_present}=false` and the audit runs the standard 22 agents.
+
+**Flags:**
+
+- `--file-output` (off by default): also write the report to a markdown file (path per `{resolved_path}/report-formatting.md`). Never write a report file unless explicitly passed.
+## Orchestration
+
+**Turn 0 — Environment preflight (toolchain bootstrap).** After printing the banner (Turn 1 prints it; preflight runs immediately after) and before discovery, ensure the terminal-based audit toolchain is installed so PoC generation and static analysis are fast and self-provisioning on any machine. **All tools are terminal-based.**
+
+1. **Fast presence check (one Bash call):** `command -v forge slither solc jq cast anvil`, prefixed with `export PATH="$HOME/.local/bin:$HOME/scoop/shims:$HOME/.foundry/bin:$HOME/.cargo/bin:$PATH"` so user-space installs from a prior run resolve.
+2. **If `forge`, `slither`, `solc`, and `jq` are ALL present** → print `✓ audit toolchain ready` and proceed to Turn 1. (These four are the required floor; do not reinstall.)
+3. **If any of the four is missing** → locate the setup scripts (Glob `**/scripts/setup-env.sh` → its directory is `{skill_dir}/scripts`) and run the OS-appropriate one ONCE, non-interactively, tolerating failures:
+   - **Windows** (`uname` is `MINGW*`/`MSYS*`/`CYGWIN*`, or PowerShell is available): prefer `PowerShell` → `powershell -NoProfile -ExecutionPolicy Bypass -File {skill_dir}/scripts/setup-env.ps1`. (The Git-Bash path also works: `bash {skill_dir}/scripts/setup-env.sh`.)
+   - **Linux / macOS / WSL:** `bash {skill_dir}/scripts/setup-env.sh`.
+   The scripts are idempotent (skip present tools), install globally to user space (scoop shims / pipx `~/.local/bin` / `~/.foundry/bin` — all persisted to PATH), and print a toolchain summary. Re-run the presence check afterward.
+4. **Never block the audit on a failed optional tool.** `forge` + `slither` + `solc` + `jq` are the floor; `aderyn`/`halmos`/`mythril`/`echidna`/`medusa` are optional (best under WSL/Docker on Windows). If a required install genuinely fails, print a one-line warning and proceed to Turn 1 anyway — the agents still audit by reasoning; tools only accelerate PoCs. Do NOT retry installs in a loop.
+5. Run preflight **once per session**; if a `✓ audit toolchain ready` was already printed earlier this session, skip straight to Turn 1.
+
+**Turn 1 — Discover.** Print the banner, then make these parallel tool calls in one message:
+
+a. Bash `find` for in-scope `.sol` files per mode selection — and, in the same call, for ZK circuit files (`*.circom`, `*.nr`, `*.cairo`, and halo2/arkworks/gnark gadget `.rs`) to set `{zk_present}` / `{zk_files}` per Mode Selection
+b. Glob for `**/references/hacking-agents/shared-rules.md` — extract the `references/` directory (two levels up) as `{resolved_path}`
+c. ToolSearch `select:Agent`
+d. Read the local `VERSION` file from the same directory as this skill
+e. Bash `curl -sf https://raw.githubusercontent.com/Subhashis360/LLM-SKILLS/main/solidity-auditor/VERSION`
+f. Bash `mktemp -d ./.audit-XXXXXX` → store as `{bundle_dir}`
+
+If the remote VERSION fetch succeeds and differs from local, print `⚠️ You are not using the latest version. Please upgrade for best security coverage. See https://github.com/Subhashis360/LLM-SKILLS`. If it fails, skip silently.
+
+**Turn 1b — Model selection (Claude Code only).** This turn applies ONLY when both `AskUserQuestion` and the `Agent` tool (with a `model` parameter) are available in your runtime — i.e., Claude Code. On Codex, Gemini, Cursor's native agent, or any runtime without these, SKIP this turn entirely, leave `{agent_model}` unset, and proceed to Turn 2. Do NOT emit the question as prose. Do NOT substitute any other mechanism.
+
+On Claude Code:
+
+1. Read your system prompt to detect your own model **family** (Opus, Sonnet, or Haiku). Ignore the version digits — the Agent tool's `model` parameter takes the family name (`"opus"` / `"sonnet"` / `"haiku"`), and the runtime resolves to the latest version in that family.
+2. Call `AskUserQuestion` with:
+   - Question: `"Which Claude model should the 22 audit agents use?"`
+   - Three single-select options. Mark the orchestrator's own family as `(Recommended)` and place it first.
+   - On each option, set the `description` field to `latest`.
+   - On each option, set the `preview` field verbatim (preserve all whitespace exactly — the box widths must stay equal across all three):
+
+   Opus preview:
+
+   ```
+   ┌──────────────────────────────────────────────────────────┐
+   │  opus  ·  highest reasoning  ·  most expensive           │
+   └──────────────────────────────────────────────────────────┘
+   ```
+
+   Sonnet preview:
+
+   ```
+   ┌──────────────────────────────────────────────────────────┐
+   │  sonnet  ·  balanced reasoning  ·  mid cost              │
+   └──────────────────────────────────────────────────────────┘
+   ```
+
+   Haiku preview:
+
+   ```
+   ┌──────────────────────────────────────────────────────────┐
+   │  haiku  ·  lowest reasoning  ·  cheapest                 │
+   └──────────────────────────────────────────────────────────┘
+   ```
+3. Store the runner's choice as `{agent_model}`. If no answer, default to the orchestrator's own model.
+
+**Turn 2 — Prepare.** In one message, make parallel tool calls: (a) Read `{resolved_path}/report-formatting.md`, (b) Read `{resolved_path}/judging.md`.
+
+Then build all bundles in a single Bash command using `cat` (not shell variables or heredocs):
+
+1. `{bundle_dir}/source.md` — ALL in-scope `.sol` files, each with a `### path` header and fenced code block.
+2. Agent bundles = `source.md` + agent-specific files:
+
+| Bundle                | Appended files (relative to `{resolved_path}`)                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent-1-bundle.md`   | `source.md` + `senior-auditor-sop.md` + `hacking-agents/math-precision-agent.md` + `hacking-agents/shared-rules.md`                            |
+| `agent-2-bundle.md`   | `source.md` + `senior-auditor-sop.md` + `hacking-agents/access-control-agent.md` + `hacking-agents/shared-rules.md`                            |
+| `agent-3-bundle.md`   | `source.md` + `senior-auditor-sop.md` + `hacking-agents/economic-security-agent.md` + `hacking-agents/shared-rules.md`                         |
+| `agent-4-bundle.md`   | `source.md` + `senior-auditor-sop.md` + `hacking-agents/execution-trace-agent.md` + `hacking-agents/shared-rules.md`                           |
+| `agent-5-bundle.md`   | `source.md` + `senior-auditor-sop.md` + `hacking-agents/invariant-agent.md` + `hacking-agents/shared-rules.md`                                 |
+| `agent-6-bundle.md`   | `source.md` + `senior-auditor-sop.md` + `hacking-agents/periphery-agent.md` + `hacking-agents/shared-rules.md`                                 |
+| `agent-7-bundle.md`   | `source.md` + `senior-auditor-sop.md` + `hacking-agents/first-principles-agent.md` + `hacking-agents/shared-rules.md`                          |
+| `agent-8-bundle.md`   | `source.md` + `senior-auditor-sop.md` + `hacking-agents/asymmetry-agent.md` + `hacking-agents/shared-rules.md`                                 |
+| `agent-9-bundle.md`   | `source.md` + `senior-auditor-sop.md` + `hacking-agents/boundary-agent.md` + `hacking-agents/shared-rules.md`                                  |
+| `agent-10-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/numerical-gap-agent.md` + `hacking-agents/shared-rules.md`                             |
+| `agent-11-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/trust-gap-agent.md` + `hacking-agents/shared-rules.md`                                 |
+| `agent-12-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/flow-gap-agent.md` + `hacking-agents/shared-rules.md`                                  |
+| `agent-13-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/unlimited-mint-agent.md` + `hacking-agents/shared-rules.md`                            |
+| `agent-14-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/unauthorized-transfer-agent.md` + `hacking-agents/shared-rules.md`                     |
+| `agent-15-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/swap-without-auth-agent.md` + `hacking-agents/shared-rules.md`                         |
+| `agent-16-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/signature-exploit-agent.md` + `hacking-agents/shared-rules.md`                         |
+| `agent-17-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/flash-loan-attack-agent.md` + `hacking-agents/shared-rules.md`                         |
+| `agent-18-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/reentrancy-agent.md` + `hacking-agents/shared-rules.md`                                |
+| `agent-19-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/oracle-manipulation-agent.md` + `hacking-agents/shared-rules.md`                       |
+| `agent-20-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/cross-chain-bridge-agent.md` + `hacking-agents/shared-rules.md`                        |
+| `agent-21-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/dos-griefing-agent.md` + `hacking-agents/shared-rules.md`                              |
+| `agent-22-bundle.md`  | `source.md` + `senior-auditor-sop.md` + `hacking-agents/gold-bug-hunter-agent.md` + `hacking-agents/shared-rules.md`                            |
+
+Each bundle = source.md + SOP + specialty + shared-rules. Agents read the bundle; no Read/Grep needed for the initial scan. Targeted Read/Grep allowed for cross-file investigation.
+
+**Conditional ZK bundle (only if `{zk_present}`).** Also build `{bundle_dir}/zk-source.md` from ALL `{zk_files}` (each with a `### path` header and fenced code block), then build `agent-23-bundle.md` = `zk-source.md` + `senior-auditor-sop.md` + `hacking-agents/circuit-soundness-agent.md` + `hacking-agents/shared-rules.md`. If a protocol spec / ZIPs / the halo2 book are present in the repo, append them to `zk-source.md` too — feeding the reference material into the circuit auditor is what surfaces missing-constraint bugs.
+
+Print line counts for every bundle and `source.md`. Do NOT inline source code into the Agent call prompt itself.
+
+**Turn 3a — Spawn all agents (22, or 23 if `{zk_present}`).** In one message, spawn all agents as **parallel BACKGROUND Agent calls** (`run_in_background=true`). If Turn 1b set `{agent_model}`, pass `model={agent_model}` on every Agent call. If `{agent_model}` is unset (Turn 1b skipped — Codex, Gemini, others), omit the `model` parameter entirely — do NOT substitute any default. The orchestrator will receive a notification when each agent completes — do NOT poll or sleep. Single phase, no later spawns. Proceed to Turn 3b only after every spawned agent (all 22, or 23 with ZK) has notified completion.
+
+Agents 1–9 use the **single-specialty prompt** (Turn 3a-i). Agents 10–12 use the **gap-hunter prompt** (Turn 3a-ii). Agents 13–21 use the **critical-exploit prompt** (Turn 3a-iii). Agent 22 (gold-bug-hunter) uses the **single-specialty prompt** (Turn 3a-i). **If `{zk_present}`, additionally spawn agent-23 (circuit-soundness) using the critical-exploit prompt (Turn 3a-iii) — total 23 agents; otherwise 22.**
+
+**Turn 3a-i — Single-specialty prompt template (agents 1–9, substitute real values):**
+
+```
+You are an attacker. Your specialty, mindset, source, and output rules
+are in your bundle. Read it fully before producing findings.
+
+Read first:
+- {bundle_dir}/agent-N-bundle.md (XXXX lines) — source + SOP + specialty + shared rules.
+
+The bundle contains all in-scope source. Do NOT re-read in-scope files
+for the initial scan. Use Read/Grep only for cross-file searches or
+out-of-scope context (interfaces/, lib/, mocks/, test/).
+
+What a finding looks like:
+- file, function
+- root cause — the one-sentence code-level defect
+- minimal fix — the smallest change that eliminates the defect
+- proof — concrete numbers, a trace, or quoted code
+
+Without concrete proof, it's a LEAD, not a finding. Leads are honest
+about what you couldn't verify — they're not failures, they're
+calibration. Emit them.
+
+Don't skim. Don't trust your first read. Trust your discomfort.
+
+Output format: see shared-rules.md inside your bundle.
+```
+
+**Turn 3a-ii — Gap-hunter prompt template (agents 10–12, substitute real values):**
+
+```
+You are an attacker. Your gap-hunter specialty, mindset, source, and
+output rules are in your bundle. Read it fully before producing findings.
+
+Read first:
+- {bundle_dir}/agent-N-bundle.md (XXXX lines) — source + SOP + gap-hunter specialty + shared rules.
+
+The bundle contains all in-scope source. Do NOT re-read in-scope files
+for the initial scan. Use Read/Grep only for cross-file searches or
+out-of-scope context (interfaces/, lib/, mocks/, test/).
+
+What a finding looks like:
+- file, function
+- seam — which two or three lenses combine
+- root cause — the one-sentence code-level defect that lives at the seam
+- minimal fix — the smallest change that eliminates the defect
+- proof — concrete numbers, a trace, or quoted code showing the seam
+
+Without concrete proof of the seam, it's a LEAD, not a finding.
+Leads are honest about what you couldn't verify — they're not failures,
+they're calibration. Emit them.
+
+Don't skim. Don't trust your first read. Trust your discomfort.
+
+Output format: see shared-rules.md inside your bundle (gap-hunter-specific
+output fields are in your specialty file).
+```
+
+**Turn 3a-iii — Critical-exploit prompt template (agents 13–21, substitute real values):**
+
+```
+You are an attacker with a specific critical-exploit specialty. Your attack model, targets, and proof requirements are in your bundle. Read it fully before producing findings.
+
+Read first:
+- {bundle_dir}/agent-N-bundle.md (XXXX lines) — source + SOP + exploit specialty + shared rules.
+
+The bundle contains all in-scope source. Do NOT re-read in-scope files for the initial scan.
+Use Read/Grep only for cross-file searches or out-of-scope context (interfaces/, lib/, mocks/, test/).
+
+Your specialty is a CRITICAL exploit class — the bugs that cause the biggest losses:
+- Unlimited token generation
+- Unauthorized token transfers
+- Swaps without authorization
+- Signature/permit bypass
+- Flash loan enabled attacks
+- Reentrancy (classic / cross-function / read-only / hook / cross-contract)
+- Oracle / price-feed manipulation and staleness
+- Cross-chain / bridge message forgery and replay
+- Denial of service / griefing that permanently locks funds
+- ZK circuit soundness / missing constraint (unconstrained witness → forged nullifier, double-spend, undetectable inflation — agent-23, only when circuit files are in scope)
+
+For EVERY finding in your class:
+- Write the exploit as a numbered call sequence (attacker steps)
+- Include concrete token amounts / dollar values
+- Include the specific missing check that would prevent it
+
+Without a numbered call sequence and concrete values, it is a LEAD, not a FINDING.
+
+Output format: see shared-rules.md inside your bundle, plus your specialty's output fields.
+```
+
+**Turn 3b — Wait for all spawned agents to complete.** Once every spawned agent (all 22, or 23 if `{zk_present}`) has notified completion, proceed to Turn 4. Do NOT proceed to dedup until every agent has finished — let them run to natural completion. Do NOT poll or sleep; act only on completion notifications.
+
+**Turn 4 — Deduplicate, validate & output.** Single-pass: deduplicate all agent results, gate-evaluate, and produce the final report in one turn. Do NOT print an intermediate dedup list — go straight to the report.
+
+1. **Dedup.** Parse every FINDING and LEAD from all spawned agents (22, or 23 with the ZK circuit-soundness agent). Group by `group_key` (Contract | function | bug-class). Exact-match first; merge synonymous bug_class within same (Contract, function). Keep best per group, number sequentially, annotate `[agents: N]`.
+
+   **MANDATORY — Wide-description (group_key).** Merged group with distinct mechanisms (different `fix:`, code-level cause, or attack path) MUST list every mechanism. No dropping. Same function can have multiple coexisting bugs at the same group_key — all MUST appear.
+
+   **MANDATORY — Function-level second pass (after group_key dedup).** Run at (Contract, function), ignoring bug_class. Agents often label coexisting bugs with different bug_class tags but reference multiple mechanisms in the body. For every (Contract, function) with multiple final findings: scan body (description, path, proof, fix) of every constituent for distinct mechanisms across bug_class boundaries. Every mechanism in any constituent body MUST appear in ≥1 final finding.
+
+   **MANDATORY — Function isolation (HARD).** NEVER merge across different `function:` fields. Dedup only within (Contract, function). Different function = different bug. Second pass above stays WITHIN (Contract, function), never across.
+
+   **MANDATORY — Fix preservation (HARD GATE).** Before writing merged `fix:` on a multi-finding (Contract, function):
+   1. Collect every raw `fix:` from agents flagging the tuple.
+   2. Group by ADD-lines (`+` lines, or equivalent require/assignment).
+   3. Distinct if ADD-lines differ in: called function/expression (e.g., `require(msg.value == amount)` vs `require(zrc20 != _ETH_ADDRESS_)`), check direction (validate/restrict/ban), or checked parameter.
+   4. ≥2 distinct → present as Option A, B, … — one block per distinct fix, verbatim from agent text (no paraphrase).
+   5. Label intuitively: validate / restrict / allow-and-handle / ban-path.
+
+   **Output format when 2+ distinct fixes exist:**
+
+   ```
+   **Fix (Option A — <label>)**:
+
+   ```diff
+   <verbatim diff from raw agent N1's fix>
+   ```
+
+   **Fix (Option B — <label>)**:
+
+   ```diff
+   <verbatim diff from raw agent N2's fix>
+   ```
+   ```
+
+   **Inline check before printing**: count distinct fixes from raw for this (Contract, function). ≥2 distinct but merged shows 1 → violation, add alternatives.
+
+   **MANDATORY — Completeness (HARD GATE).** Before print: list every unique (Contract, function, bug-class) in any raw FINDING/LEAD across all spawned agents (22, or 23 with ZK). Every unique (Contract, function) MUST have ≥1 item in final. Zero = silent drop, fix it. Multiple bug-class within same (Contract, function) MAY collapse to one item (wide-description), but the (Contract, function) MUST survive. Print inline before report: `Completeness: N unique (Contract, function) in raw, N covered in final.`
+
+   **MANDATORY — Completeness (HARD GATE).** Before print: list every unique (Contract, function, bug-class) in any raw FINDING/LEAD across all spawned agents (22, or 23 with ZK). Every unique (Contract, function) MUST have ≥1 item in final. Zero = silent drop, fix it. Multiple bug-class within same (Contract, function) MAY collapse to one item (wide-description), but the (Contract, function) MUST survive. Print inline before report: `Completeness: N unique (Contract, function) in raw, N covered in final.`
+
+   **CRITICAL-EXPLOIT PRIORITY:** Findings from agents 13–21 (unlimited-mint, unauthorized-transfer, swap-without-auth, signature-exploit, flash-loan-attack, reentrancy, oracle-manipulation, cross-chain-bridge, dos-griefing), agent-22 (gold-bug-hunter — the meta-hunter for what other agents miss), and agent-23 (circuit-soundness) when ZK files are in scope — are **automatically prioritized** to the top of the report regardless of confidence score. These represent the highest-impact bug classes. List them in this order at the top of the report:
+   0. ZK circuit soundness / missing constraint (undetectable inflation or double-spend) — when present, this outranks everything
+   1. Unlimited mint / token inflation
+   2. Unauthorized transfer / direct theft
+   3. Cross-chain / bridge message forgery (unbacked mint / double-spend)
+   4. Reentrancy drain (classic / cross-function / read-only / hook / cross-contract)
+   5. Oracle / price-feed manipulation or staleness
+   6. Swap without authorization
+   7. Signature / permit bypass
+   8. Flash loan attack
+   9. Denial of service / griefing with permanent fund-lock
+   Then remaining findings sorted by confidence.
+
+   Composite chains: if A's output feeds B's precondition AND combined impact > either alone, add `Chain: [A] + [B]` at conf = min(A, B). Most audits: 0–2.
+
+2. **Gate.** Run each deduped finding through the four gates in `judging.md` (no skip, no reorder, no revisit after verdict).
+
+   **Single-pass:** every relevant code path ONCE in fixed order (constructor → setters → swap → mint → burn → liquidate). One-line verdict: `BLOCKS` / `ALLOWS` / `IRRELEVANT` / `UNCERTAIN`. `UNCERTAIN = ALLOWS`. Commit, no re-examination.
+
+   **Severity classification & floor (apply to every CONFIRMED finding).** Assign exactly one severity per the rubric in `judging.md` (Critical / High / Medium / Low / Informational), rated at the worst exploitable variant. Then enforce the floor: Critical/High/Medium → main report; Low → collapsed appendix; **Informational → DROP (do not print, not even as a lead)**. Anything you cannot tie to a named victim and a concrete loss/lock is Informational — drop it. This keeps the report high-signal: only findings that can actually damage the protocol survive.
+
+3. **Lead promotion / rejection.**
+   - LEAD → FINDING (conf 75) if: full exploit chain in source, OR `[agents: 2+]` demoted (not rejected) same issue.
+   - `[agents: 2+]` does NOT override a code path that interrupts attack before harm — demote to LEAD if execution uncertain.
+   - No deployer-intent reasoning — what code allows, not how deployer might use it.
+
+4. **Format/print** per `report-formatting.md`. Exclude rejected. If `--file-output`: also write to file. Do NOT re-read source to "verify the most critical claim" — agents did that, dedup filtered.
+
+5. **Auto-clean.** After print (and `--file-output` write): `rm -rf {bundle_dir}`. Bundle dir = transient build state, not an artifact. Don't skip. For debugging: copy bundle elsewhere before re-running.
+
+**Turn 4b — PoC Generation (CRITICAL EXPLOITS ONLY).** After the main report is printed, spawn ONE background Agent using `{resolved_path}/hacking-agents/poc-generator-agent.md` as its specialty file. Pass it:
+- The full deduped FINDING list (all findings, not just critical)
+- The source bundle `{bundle_dir}/source.md`
+- Instruction: prioritize findings from bug classes: unlimited-mint, unauthorized-transfer, cross-chain-bridge, reentrancy, oracle-manipulation, swap-without-auth, signature-exploit, flash-loan-attack, dos-griefing (permanent fund-lock)
+
+The PoC agent writes runnable Foundry test code for each confirmed FINDING. Wait for it to complete, then append the PoC section to the report (or write a separate `{project-name}-poc.sol` file if `--file-output` is active).
+
+PoC output format:
+```
+## 🧪 Proof-of-Concept Tests
+
+> Run: `forge test --match-test test_exploit_ -vvvv`
+
+### PoC #1: [Finding Title]
+[forge test code]
+
+### PoC #2: [Finding Title]
+[forge test code]
+```
+
+
+## Banner
+
+Before doing anything else, print this exactly:
+
+```
+
+ ██████╗██╗  ██╗ █████╗ ██╗███╗   ██╗    ███████╗██╗  ██╗██╗███████╗██╗     ██████╗ 
+██╔════╝██║  ██║██╔══██╗██║████╗  ██║    ██╔════╝██║  ██║██║██╔════╝██║     ██╔══██╗
+██║     ███████║███████║██║██╔██╗ ██║    ███████╗███████║██║█████╗  ██║     ██║  ██║
+██║     ██╔══██║██╔══██║██║██║╚██╗██║    ╚════██║██╔══██║██║██╔══╝  ██║     ██║  ██║
+╚██████╗██║  ██║██║  ██║██║██║ ╚████║    ███████║██║  ██║██║███████╗███████╗██████╔╝
+ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝   ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═════╝ 
+              ██████╗ ██╗   ██╗    █████╗ ██╗   ██╗██████╗ ██╗████████╗ ██████╗ ██████╗ 
+             ██╔══██╗╚██╗ ██╔╝   ██╔══██╗██║   ██║██╔══██╗██║╚══██╔══╝██╔═══██╗██╔══██╗
+             ██████╔╝ ╚████╔╝    ███████║██║   ██║██║  ██║██║   ██║   ██║   ██║██████╔╝
+             ██╔══██╗  ╚██╔╝     ██╔══██║██║   ██║██║  ██║██║   ██║   ██║   ██║██╔══██╗
+             ██████╔╝   ██║      ██║  ██║╚██████╔╝██████╔╝██║   ██║   ╚██████╔╝██║  ██║
+             ╚═════╝    ╚═╝      ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
+
+```

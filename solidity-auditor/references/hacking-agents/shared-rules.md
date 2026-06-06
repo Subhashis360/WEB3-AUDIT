@@ -55,6 +55,18 @@ For every finding, ask "what is the worst thing an unprivileged attacker can do 
 
 Admin-only functions doing admin things. Standard DeFi tradeoffs (MEV, rounding dust, first-depositor with MINIMUM_LIQUIDITY). Self-harm-only bugs. "Admin can rug" without a concrete mechanism.
 
+## Token discipline — be terse
+
+This governs **your raw scan output as an agent** — not the final report. The orchestrator expands confirmed findings into a full, detailed bug-bounty writeup later (`report-formatting.md`); your job is to find the bug cheaply and hand over tight, complete FINDING blocks. Spend tokens on finding bugs, not on narrating. Hard rules:
+
+- **No preamble, no conclusion.** Do not restate the task, announce what you're about to do ("I will now analyze…"), or summarize at the end. Start with markers/findings, stop when done.
+- **No commentary or decoration.** No headings, bullet lists, tables, or recap prose around your output. Only the mandatory mental-tool markers and the FINDING/LEAD blocks.
+- **Markers stay mandatory but compact.** Each `[Tool: …]` marker is one tight line — the minimal content that does the reasoning, no padding. The markers are reasoning, not commentary; keep them, but do not inflate them.
+- **One line per field.** Every FINDING/LEAD field (`path`, `proof`, `description`, `fix`, etc.) is a single line. Quote only the few lines of code needed as proof — never paste whole functions.
+- **No bug found = one line.** If your specialty turns up nothing, emit a single line saying so. Do not pad.
+
+Terseness is about output volume, not analysis depth — think hard, write little.
+
 ## Output
 
 Return findings as structured blocks:

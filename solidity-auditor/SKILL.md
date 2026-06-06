@@ -138,6 +138,17 @@ Then build all bundles in a single Bash command using `cat` (not shell variables
 
 Each bundle = source.md + SOP + specialty + shared-rules. Agents read the bundle; no Read/Grep needed for the initial scan. Targeted Read/Grep allowed for cross-file investigation.
 
+**Lesson ledgers (self-evolution — append if present).** Immediately after the specialty file and BEFORE `shared-rules.md`, append two learning files **if they exist** (they accumulate across audits; on a fresh checkout they may be absent — never fail the build over a missing one):
+
+1. `hacking-agents/memory/<specialty-basename>.lessons.md` — this agent's own past confirmed bugs and false-positives (e.g. for `agent-18` whose specialty is `reentrancy-agent.md`, append `memory/reentrancy-agent.lessons.md`).
+2. `hacking-agents/memory/_global.lessons.md` — cross-agent confirmed patterns and recurring false-positives, appended to **every** bundle.
+
+These are written by `scripts/record_outcome.py` after you record real-world finding outcomes (see Turn 5). Concatenating them is what makes the agents improve over time — each one opens its next audit already knowing what paid and what to stop reporting. In the build `cat`, guard each with a presence test so absence is silent, e.g. append only files that exist (`for m in memory/<basename>.lessons.md memory/_global.lessons.md; do [ -f "$m" ] && cat "$m" >> bundle; done`). The ZK agent-23 bundle uses `memory/circuit-soundness-agent.lessons.md` + `_global.lessons.md` the same way.
+
+> **HARD RULE — the ledger is READ-ONLY to you.** You (and every agent you spawn) may only `cat`/read files under `memory/`. You MUST NOT create, edit, append to, or "fix" any `memory/*.lessons.md`, `memory/scoreboard.json`, or `memory/.ledger-manifest.json` — not now, not in any turn, not even if a lesson looks wrong or you "found" a great pattern. The ledger has exactly one writer, the validated `scripts/record_outcome.py`, driven by an explicit human decision. This is what lets the skill run safely on a weak runtime (Gemini/inline) as well as a strong one (Claude): no model, however capable or limited, is trusted to mutate the knowledge base. If a lesson seems wrong, surface it in your output — do not touch the file.
+>
+> **Integrity preflight (do this once per audit, before spawning, if `python` and the ledger exist).** If any `memory/*.lessons.md` contains entries, run `python {skill_dir}/scripts/record_outcome.py --verify`. If it prints `RESULT: PASS`, proceed. If it prints `RESULT: FAIL` (the ledger was edited outside the script — possible tampering or a stray LLM write), **do NOT append any lesson file to the bundles** — build bundles from source + SOP + specialty + shared-rules only, print a one-line warning (`⚠️ lesson ledger failed integrity check — running without learned lessons; fix with record_outcome.py --revert/--reseal`), and continue the audit. A corrupted ledger is never injected into an agent. If `python` is unavailable, skip the check and proceed (the provenance footers + single-writer rule still hold).
+
 **Conditional ZK bundle (only if `{zk_present}`).** Also build `{bundle_dir}/zk-source.md` from ALL `{zk_files}` (each with a `### path` header and fenced code block), then build `agent-23-bundle.md` = `zk-source.md` + `senior-auditor-sop.md` + `hacking-agents/circuit-soundness-agent.md` + `hacking-agents/shared-rules.md`. If a protocol spec / ZIPs / the halo2 book are present in the repo, append them to `zk-source.md` too — feeding the reference material into the circuit auditor is what surfaces missing-constraint bugs.
 
 Print line counts for every bundle and `source.md`. Do NOT inline source code into the Agent call prompt itself.
@@ -327,6 +338,42 @@ PoC output format:
 ### PoC #2: [Finding Title]
 [forge test code]
 ```
+
+**Turn 5 — Audit-log write (self-evolution ground-truth seed).** After the report (and PoCs) are produced, persist a machine-readable record of this audit so its findings can later be scored and fed back into the agents. This is the capture half of the learning loop — Turn 2 reads the lessons, Turn 5 writes the raw material the lessons are distilled from.
+
+1. Compute `{audit_id}` = `<YYYY-MM-DD>-<project-folder-name>` (sanitize to `[a-z0-9-]`).
+2. Write `audit-log/{audit_id}.json` (relative to the skill dir, i.e. `{resolved_path}/../audit-log/{audit_id}.json`; create the `audit-log/` directory if absent) with this shape — one entry per **final deduped finding** (main report + Low appendix; not dropped Informational):
+
+   ```json
+   {
+     "audit_id": "2026-06-06-myvault",
+     "date": "2026-06-06",
+     "project": "myvault",
+     "findings": [
+       {
+         "id": 1,
+         "group_key": "Vault | withdraw | reentrancy",
+         "contract": "Vault",
+         "function": "withdraw",
+         "bug_class": "reentrancy",
+         "severity": "Critical",
+         "agents": ["reentrancy-agent", "gold-bug-hunter-agent"],
+         "title": "one-line title",
+         "outcome": null,
+         "paid": null,
+         "note": null
+       }
+     ]
+   }
+   ```
+
+   The `agents` array MUST use the specialty **file basenames** (e.g. `reentrancy-agent`, `oracle-manipulation-agent`) of the agents that produced each finding — take them from the `[agents: N]` attribution carried through dedup. This is the key that lets `record_outcome.py` credit the right agent's scoreboard and lesson file.
+
+   **HARD RULE — every `outcome`, `paid`, and `note` MUST be `null` when you write this file.** You are recording *what was found*, not judging whether it was right. Outcomes are set ONLY later by a human via `record_outcome.py`. Never pre-fill an outcome, never mark a finding confirmed/false-positive yourself, and never write to `memory/` in this turn (or any turn). The audit-log is the ONLY file this turn produces. This separation is what guarantees a false positive can never silently train the agents: nothing becomes a lesson until a human explicitly says so.
+3. Print one line: `📒 audit-log written: audit-log/{audit_id}.json — record outcomes later with: python scripts/record_outcome.py --list`.
+4. Do NOT delete `audit-log/` in the Turn 4 auto-clean — only the transient `{bundle_dir}` is removed; the audit-log is a durable artifact.
+
+This file starts with every `outcome: null`. When you later learn a finding was paid, duped, or was a false positive — or you discover a bug the audit missed — run `scripts/record_outcome.py`, which validates the lesson, recomputes `memory/scoreboard.json`, and appends a provenance-stamped lesson into the relevant `memory/*.lessons.md`. Those lessons are picked up automatically by Turn 2 on the next run (after passing the integrity check). **No agent improves without this human step** — and because that step is the only writer, no agent can be *degraded* by an automated mistake either. Recording outcomes is what turns a static auditor into a safely self-evolving one.
 
 
 ## Banner

@@ -64,4 +64,4 @@ update skill to latest version
 
 - **Target hot contracts.** Rather than scanning an entire repo, point the tool at the 2-5 contracts you're actively changing. Smaller scope means denser context for each agent and higher-signal findings.
 - **Run more than once.** LLM output is non-deterministic — each run can surface different vulnerabilities. Two or three passes over the same code often catch things a single pass misses.
-- **Pair with audit-prep.** Run `audit-prep` first to get a full protocol picture, then run `web3-audit` for deep vulnerability hunting.
+- **Record outcomes to make it smarter.** After you learn whether a finding paid, was a dup, or was a false positive, run `scripts/record_outcome.py` — the agents fold those lessons into their next run (precision and recall improve over time).

@@ -1,0 +1,6 @@
+{
+  "_comment": "DERIVED from audit-logs + _missed.json by record_outcome.py (recompute_scoreboard). Do not hand-edit; changes are overwritten. precision = confirmed / (confirmed + false_positive).",
+  "version": 1,
+  "updated": null,
+  "agents": {}
+}

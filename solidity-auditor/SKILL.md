@@ -46,7 +46,7 @@ The **method is identical** across runtimes — each specialty reads its bundle 
 - `--file-output` (off by default): also write the report to a markdown file (path per `{resolved_path}/report-formatting.md`). Never write a report file unless explicitly passed.
 ## Orchestration
 
-**Turn 0 — Environment preflight (toolchain bootstrap).** After printing the banner (Turn 1 prints it; preflight runs immediately after) and before discovery, ensure the terminal-based audit toolchain is installed so PoC generation and static analysis are fast and self-provisioning on any machine. **All tools are terminal-based.**
+**Turn 0 — Environment preflight (toolchain bootstrap).** Before discovery, ensure the terminal-based audit toolchain is installed so PoC generation and static analysis are fast and self-provisioning on any machine. **All tools are terminal-based.**
 
 1. **Fast presence check (one Bash call):** `command -v forge slither solc jq cast anvil`, prefixed with `export PATH="$HOME/.local/bin:$HOME/scoop/shims:$HOME/.foundry/bin:$HOME/.cargo/bin:$PATH"` so user-space installs from a prior run resolve.
 2. **If `forge`, `slither`, `solc`, and `jq` are ALL present** → print `✓ audit toolchain ready` and proceed to Turn 1. (These four are the required floor; do not reinstall.)
@@ -57,7 +57,7 @@ The **method is identical** across runtimes — each specialty reads its bundle 
 4. **Never block the audit on a failed optional tool.** `forge` + `slither` + `solc` + `jq` are the floor; `aderyn`/`halmos`/`mythril`/`echidna`/`medusa` are optional (best under WSL/Docker on Windows). If a required install genuinely fails, print a one-line warning and proceed to Turn 1 anyway — the agents still audit by reasoning; tools only accelerate PoCs. Do NOT retry installs in a loop.
 5. Run preflight **once per session**; if a `✓ audit toolchain ready` was already printed earlier this session, skip straight to Turn 1.
 
-**Turn 1 — Discover.** Print the banner, then make these parallel tool calls in one message:
+**Turn 1 — Discover.** Make these parallel tool calls in one message:
 
 a. Bash `find` for in-scope `.sol` files per mode selection — and, in the same call, for ZK circuit files (`*.circom`, `*.nr`, `*.cairo`, and halo2/arkworks/gnark gadget `.rs`) to set `{zk_present}` / `{zk_files}` per Mode Selection
 b. Glob for `**/references/hacking-agents/shared-rules.md` — extract the `references/` directory (two levels up) as `{resolved_path}`
@@ -374,25 +374,3 @@ PoC output format:
 4. Do NOT delete `audit-log/` in the Turn 4 auto-clean — only the transient `{bundle_dir}` is removed; the audit-log is a durable artifact.
 
 This file starts with every `outcome: null`. When you later learn a finding was paid, duped, or was a false positive — or you discover a bug the audit missed — run `scripts/record_outcome.py`, which validates the lesson, recomputes `memory/scoreboard.json`, and appends a provenance-stamped lesson into the relevant `memory/*.lessons.md`. Those lessons are picked up automatically by Turn 2 on the next run (after passing the integrity check). **No agent improves without this human step** — and because that step is the only writer, no agent can be *degraded* by an automated mistake either. Recording outcomes is what turns a static auditor into a safely self-evolving one.
-
-
-## Banner
-
-Before doing anything else, print this exactly:
-
-```
-
- ██████╗██╗  ██╗ █████╗ ██╗███╗   ██╗    ███████╗██╗  ██╗██╗███████╗██╗     ██████╗ 
-██╔════╝██║  ██║██╔══██╗██║████╗  ██║    ██╔════╝██║  ██║██║██╔════╝██║     ██╔══██╗
-██║     ███████║███████║██║██╔██╗ ██║    ███████╗███████║██║█████╗  ██║     ██║  ██║
-██║     ██╔══██║██╔══██║██║██║╚██╗██║    ╚════██║██╔══██║██║██╔══╝  ██║     ██║  ██║
-╚██████╗██║  ██║██║  ██║██║██║ ╚████║    ███████║██║  ██║██║███████╗███████╗██████╔╝
- ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝╚═╝  ╚═══╝   ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚═════╝ 
-              ██████╗ ██╗   ██╗    █████╗ ██╗   ██╗██████╗ ██╗████████╗ ██████╗ ██████╗ 
-             ██╔══██╗╚██╗ ██╔╝   ██╔══██╗██║   ██║██╔══██╗██║╚══██╔══╝██╔═══██╗██╔══██╗
-             ██████╔╝ ╚████╔╝    ███████║██║   ██║██║  ██║██║   ██║   ██║   ██║██████╔╝
-             ██╔══██╗  ╚██╔╝     ██╔══██║██║   ██║██║  ██║██║   ██║   ██║   ██║██╔══██╗
-             ██████╔╝   ██║      ██║  ██║╚██████╔╝██████╔╝██║   ██║   ╚██████╔╝██║  ██║
-             ╚═════╝    ╚═╝      ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
-
-```
